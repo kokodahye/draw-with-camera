@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>대고그려</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        #camera {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            z-index: 1;
+        }
+
+        #overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+            z-index: 2;
+            display: none;
+        }
+
+        .ui {
+            position: fixed;
+            z-index: 10;
+        }
+
+        .bottom-bar {
+            bottom: 0; left: 0; right: 0;
+            padding: 16px 20px;
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .slider-wrap {
+            width: 85%;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 10px 16px;
+            border-radius: 16px;
+        }
+
+        .slider-wrap.show { display: flex; }
+
+        .slider-wrap label {
+            color: #fff;
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            min-width: 42px;
+        }
+
+        .slider-wrap input[type="range"] {
+            flex: 1;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        .slider-wrap input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 26px; height: 26px;
+            border-radius: 50%;
+            background: #ff4081;
+            border: 3px solid #fff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .slider-wrap span {
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            min-width: 36px;
+            text-align: right;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            border: none;
+            padding: 13px 28px;
+            border-radius: 25px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+
+        .btn:active { transform: scale(0.95); }
+
+        .btn-primary {
+            background: #ff4081;
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(255, 64, 129, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            color: #fff;
+            display: none;
+        }
+
+        .btn-secondary.show { display: flex; }
+
+        #file-input { display: none; }
+
+        .error-screen {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 100;
+            background: #111;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            text-align: center;
+            color: #fff;
+        }
+
+        .error-screen.show { display: flex; }
+
+        .error-screen .icon { font-size: 48px; margin-bottom: 20px; }
+        .error-screen h2 { font-size: 20px; margin-bottom: 12px; }
+        .error-screen p { font-size: 14px; color: #aaa; line-height: 1.6; }
+        .error-screen .btn { margin-top: 24px; }
+    </style>
+</head>
+<body>
+    <video id="camera" autoplay playsinline muted></video>
+    <img id="overlay" alt="">
+
+    <div class="bottom-bar ui">
+        <div class="slider-wrap" id="sliderWrap">
+            <label>투명도</label>
+            <input type="range" id="opacitySlider" min="0" max="100" value="50">
+            <span id="opacityVal">50%</span>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-secondary" id="changeBtn">사진 변경</button>
+            <button class="btn btn-primary" id="uploadBtn">사진 선택</button>
+        </div>
+    </div>
+
+    <input type="file" id="file-input" accept="image/*">
+
+    <div class="error-screen" id="errorScreen">
+        <div class="icon">📷</div>
+        <h2>카메라 접근이 필요합니다</h2>
+        <p>이 앱은 카메라를 사용하여 종이 위에 그림을 따라 그릴 수 있게 해줍니다. 브라우저 설정에서 카메라 접근을 허용해주세요.</p>
+        <button class="btn btn-primary" id="retryBtn">다시 시도</button>
+    </div>
+
+    <script>
+        const camera = document.getElementById('camera');
+        const overlay = document.getElementById('overlay');
+        const slider = document.getElementById('opacitySlider');
+        const sliderWrap = document.getElementById('sliderWrap');
+        const opacityVal = document.getElementById('opacityVal');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const changeBtn = document.getElementById('changeBtn');
+        const fileInput = document.getElementById('file-input');
+        const errorScreen = document.getElementById('errorScreen');
+        const retryBtn = document.getElementById('retryBtn');
+
+        let wakeLockSentinel = null;
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                });
+                camera.srcObject = stream;
+                errorScreen.classList.remove('show');
+            } catch (err) {
+                errorScreen.classList.add('show');
+            }
+        }
+
+        async function requestWakeLock() {
+            if (!('wakeLock' in navigator)) return;
+            try {
+                wakeLockSentinel = await navigator.wakeLock.request('screen');
+                wakeLockSentinel.addEventListener('release', () => {
+                    wakeLockSentinel = null;
+                });
+            } catch (e) {}
+        }
+
+        function lockOrientation() {
+            if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock('portrait').catch(() => {});
+            }
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                requestWakeLock();
+            }
+        });
+
+        uploadBtn.addEventListener('click', () => fileInput.click());
+        changeBtn.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                overlay.src = ev.target.result;
+                overlay.style.display = 'block';
+                overlay.style.opacity = slider.value / 100;
+                sliderWrap.classList.add('show');
+                changeBtn.classList.add('show');
+                uploadBtn.textContent = '사진 선택';
+            };
+            reader.readAsDataURL(file);
+            fileInput.value = '';
+        });
+
+        slider.addEventListener('input', () => {
+            const val = slider.value;
+            overlay.style.opacity = val / 100;
+            opacityVal.textContent = val + '%';
+        });
+
+        retryBtn.addEventListener('click', startCamera);
+
+        startCamera();
+        requestWakeLock();
+        lockOrientation();
+    </script>
+</body>
+</html>
