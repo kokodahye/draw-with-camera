@@ -212,18 +212,50 @@
 
         async function startCamera() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: { ideal: 'environment' },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    },
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                const backCameras = videoDevices.filter(d =>
+                    d.label.toLowerCase().includes('back') ||
+                    d.label.toLowerCase().includes('rear') ||
+                    d.label.toLowerCase().includes('환경') ||
+                    d.label.includes('0')
+                );
+                const target = backCameras.length > 0 ? backCameras[0] : null;
+
+                const constraints = {
+                    video: target
+                        ? { deviceId: { exact: target.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+                        : { facingMode: { exact: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
                     audio: false
-                });
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+                const track = stream.getVideoTracks()[0];
+                const caps = track.getCapabilities ? track.getCapabilities() : {};
+                const settings = {};
+                if (caps.focusMode && caps.focusMode.includes('manual')) {
+                    settings.focusMode = 'manual';
+                }
+                if (caps.zoom) {
+                    settings.zoom = caps.zoom.min;
+                }
+                if (Object.keys(settings).length > 0) {
+                    track.applyConstraints({ advanced: [settings] }).catch(() => {});
+                }
+
                 camera.srcObject = stream;
                 errorScreen.classList.remove('show');
             } catch (err) {
-                errorScreen.classList.add('show');
+                try {
+                    const fallback = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'environment' }, audio: false
+                    });
+                    camera.srcObject = fallback;
+                    errorScreen.classList.remove('show');
+                } catch (e) {
+                    errorScreen.classList.add('show');
+                }
             }
         }
 
