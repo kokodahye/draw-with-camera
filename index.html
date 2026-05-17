@@ -14,7 +14,6 @@
             overflow: hidden;
             background: #000;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            touch-action: none;
             -webkit-user-select: none;
             user-select: none;
         }
@@ -29,27 +28,54 @@
 
         #overlay {
             position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            object-fit: contain;
             pointer-events: none;
             z-index: 2;
+            transform-origin: 0 0;
             display: none;
         }
 
-        .ui {
+        .corner {
             position: fixed;
-            z-index: 10;
+            width: 44px; height: 44px;
+            z-index: 20;
+            display: none;
+            touch-action: none;
         }
+
+        .corner::after {
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 18px; height: 18px;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            background: rgba(255, 64, 129, 0.8);
+            border: 2.5px solid #fff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+
+        .corner.dragging::after {
+            width: 24px; height: 24px;
+            background: #ff4081;
+        }
+
+        .corner-line {
+            position: fixed;
+            z-index: 15;
+            pointer-events: none;
+            display: none;
+        }
+
+        .ui { position: fixed; z-index: 30; }
 
         .bottom-bar {
             bottom: 0; left: 0; right: 0;
-            padding: 16px 20px;
-            padding-bottom: max(16px, env(safe-area-inset-bottom));
+            padding: 12px 20px;
+            padding-bottom: max(12px, env(safe-area-inset-bottom));
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
         }
 
         .slider-wrap {
@@ -60,25 +86,25 @@
             background: rgba(0, 0, 0, 0.55);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
-            padding: 10px 16px;
-            border-radius: 16px;
+            padding: 8px 14px;
+            border-radius: 14px;
         }
 
         .slider-wrap.show { display: flex; }
 
         .slider-wrap label {
             color: #fff;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 500;
             white-space: nowrap;
-            min-width: 42px;
+            min-width: 36px;
         }
 
         .slider-wrap input[type="range"] {
             flex: 1;
             -webkit-appearance: none;
             appearance: none;
-            height: 6px;
+            height: 5px;
             background: rgba(255, 255, 255, 0.25);
             border-radius: 3px;
             outline: none;
@@ -87,37 +113,34 @@
         .slider-wrap input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
-            width: 26px; height: 26px;
+            width: 24px; height: 24px;
             border-radius: 50%;
             background: #ff4081;
-            border: 3px solid #fff;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            border: 2.5px solid #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
 
         .slider-wrap span {
             color: #fff;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 600;
-            min-width: 36px;
+            min-width: 34px;
             text-align: right;
         }
 
-        .btn-row {
-            display: flex;
-            gap: 10px;
-        }
+        .btn-row { display: flex; gap: 10px; }
 
         .btn {
             border: none;
-            padding: 13px 28px;
+            padding: 12px 24px;
             border-radius: 25px;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
             display: flex;
             align-items: center;
             gap: 6px;
-            transition: transform 0.15s, box-shadow 0.15s;
+            transition: transform 0.15s;
         }
 
         .btn:active { transform: scale(0.95); }
@@ -156,7 +179,6 @@
         }
 
         .error-screen.show { display: flex; }
-
         .error-screen .icon { font-size: 48px; margin-bottom: 20px; }
         .error-screen h2 { font-size: 20px; margin-bottom: 12px; }
         .error-screen p { font-size: 14px; color: #aaa; line-height: 1.6; }
@@ -167,8 +189,17 @@
     <video id="camera" autoplay playsinline muted></video>
     <img id="overlay" alt="">
 
+    <svg class="corner-line" id="cornerLine" width="100%" height="100%">
+        <polygon id="cornerPoly" fill="none" stroke="rgba(255,64,129,0.5)" stroke-width="2" stroke-dasharray="6,4"/>
+    </svg>
+
+    <div class="corner" id="c0"></div>
+    <div class="corner" id="c1"></div>
+    <div class="corner" id="c2"></div>
+    <div class="corner" id="c3"></div>
+
     <div class="bottom-bar ui">
-        <div class="slider-wrap" id="sliderWrap">
+        <div class="slider-wrap" id="opacityWrap">
             <label>투명도</label>
             <input type="range" id="opacitySlider" min="0" max="100" value="50">
             <span id="opacityVal">50%</span>
@@ -177,6 +208,11 @@
             <label>크기</label>
             <input type="range" id="sizeSlider" min="10" max="200" value="100">
             <span id="sizeVal">100%</span>
+        </div>
+        <div class="slider-wrap" id="zoomWrap">
+            <label>줌</label>
+            <input type="range" id="zoomSlider" min="100" max="500" value="100" step="10">
+            <span id="zoomVal">1.0x</span>
         </div>
         <div class="btn-row">
             <button class="btn btn-secondary" id="changeBtn">사진 변경</button>
@@ -194,63 +230,78 @@
     </div>
 
     <script>
-        const camera = document.getElementById('camera');
-        const overlay = document.getElementById('overlay');
-        const slider = document.getElementById('opacitySlider');
-        const sliderWrap = document.getElementById('sliderWrap');
-        const opacityVal = document.getElementById('opacityVal');
-        const sizeSlider = document.getElementById('sizeSlider');
-        const sizeWrap = document.getElementById('sizeWrap');
-        const sizeVal = document.getElementById('sizeVal');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const changeBtn = document.getElementById('changeBtn');
-        const fileInput = document.getElementById('file-input');
-        const errorScreen = document.getElementById('errorScreen');
-        const retryBtn = document.getElementById('retryBtn');
+        var camera = document.getElementById('camera');
+        var overlay = document.getElementById('overlay');
+        var opacitySlider = document.getElementById('opacitySlider');
+        var opacityWrap = document.getElementById('opacityWrap');
+        var opacityVal = document.getElementById('opacityVal');
+        var sizeSlider = document.getElementById('sizeSlider');
+        var sizeWrap = document.getElementById('sizeWrap');
+        var sizeVal = document.getElementById('sizeVal');
+        var zoomSlider = document.getElementById('zoomSlider');
+        var zoomWrap = document.getElementById('zoomWrap');
+        var zoomVal = document.getElementById('zoomVal');
+        var uploadBtn = document.getElementById('uploadBtn');
+        var changeBtn = document.getElementById('changeBtn');
+        var fileInput = document.getElementById('file-input');
+        var errorScreen = document.getElementById('errorScreen');
+        var retryBtn = document.getElementById('retryBtn');
+        var cornerLine = document.getElementById('cornerLine');
+        var cornerPoly = document.getElementById('cornerPoly');
+        var cornerEls = [
+            document.getElementById('c0'),
+            document.getElementById('c1'),
+            document.getElementById('c2'),
+            document.getElementById('c3')
+        ];
 
-        let wakeLockSentinel = null;
+        var wakeLockSentinel = null;
+        var videoTrack = null;
+        var zoomRange = null;
+
+        var imgNatW = 0, imgNatH = 0;
+        var baseRect = { x: 0, y: 0, w: 0, h: 0 };
+        var corners = [[0,0],[0,0],[0,0],[0,0]];
+        var imageLoaded = false;
+
+        // ── Camera ──
 
         async function startCamera() {
             try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const videoDevices = devices.filter(d => d.kind === 'videoinput');
-                const backCameras = videoDevices.filter(d =>
-                    d.label.toLowerCase().includes('back') ||
-                    d.label.toLowerCase().includes('rear') ||
-                    d.label.toLowerCase().includes('환경') ||
-                    d.label.includes('0')
-                );
-                const target = backCameras.length > 0 ? backCameras[0] : null;
+                var devices = await navigator.mediaDevices.enumerateDevices();
+                var videoDevices = devices.filter(function(d) { return d.kind === 'videoinput'; });
+                var backCams = videoDevices.filter(function(d) {
+                    var l = d.label.toLowerCase();
+                    return l.includes('back') || l.includes('rear') || l.includes('0');
+                });
+                var target = backCams.length > 0 ? backCams[0] : null;
 
-                const constraints = {
+                var constraints = {
                     video: target
                         ? { deviceId: { exact: target.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
                         : { facingMode: { exact: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
                     audio: false
                 };
 
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                var stream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoTrack = stream.getVideoTracks()[0];
 
-                const track = stream.getVideoTracks()[0];
-                const caps = track.getCapabilities ? track.getCapabilities() : {};
-                const settings = {};
-                if (caps.focusMode && caps.focusMode.includes('manual')) {
-                    settings.focusMode = 'manual';
-                }
+                var caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
                 if (caps.zoom) {
-                    settings.zoom = caps.zoom.min;
-                }
-                if (Object.keys(settings).length > 0) {
-                    track.applyConstraints({ advanced: [settings] }).catch(() => {});
+                    zoomRange = caps.zoom;
+                    zoomSlider.min = Math.round(zoomRange.min * 100);
+                    zoomSlider.max = Math.round(zoomRange.max * 100);
+                    zoomSlider.value = Math.round(zoomRange.min * 100);
+                    zoomVal.textContent = zoomRange.min.toFixed(1) + 'x';
+                    zoomWrap.classList.add('show');
                 }
 
                 camera.srcObject = stream;
                 errorScreen.classList.remove('show');
             } catch (err) {
                 try {
-                    const fallback = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'environment' }, audio: false
-                    });
+                    var fallback = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+                    videoTrack = fallback.getVideoTracks()[0];
                     camera.srcObject = fallback;
                     errorScreen.classList.remove('show');
                 } catch (e) {
@@ -259,63 +310,232 @@
             }
         }
 
+        zoomSlider.addEventListener('input', function() {
+            if (!videoTrack || !zoomRange) return;
+            var z = parseInt(zoomSlider.value) / 100;
+            videoTrack.applyConstraints({ advanced: [{ zoom: z }] }).catch(function(){});
+            zoomVal.textContent = z.toFixed(1) + 'x';
+        });
+
+        // ── Wake Lock & Orientation ──
+
         async function requestWakeLock() {
             if (!('wakeLock' in navigator)) return;
             try {
                 wakeLockSentinel = await navigator.wakeLock.request('screen');
-                wakeLockSentinel.addEventListener('release', () => {
-                    wakeLockSentinel = null;
-                });
+                wakeLockSentinel.addEventListener('release', function() { wakeLockSentinel = null; });
             } catch (e) {}
         }
 
         function lockOrientation() {
             if (screen.orientation && screen.orientation.lock) {
-                screen.orientation.lock('portrait').catch(() => {});
+                screen.orientation.lock('portrait').catch(function(){});
             }
         }
 
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                requestWakeLock();
-            }
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') requestWakeLock();
         });
 
-        uploadBtn.addEventListener('click', () => fileInput.click());
-        changeBtn.addEventListener('click', () => fileInput.click());
+        // ── Image Upload ──
 
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
+        uploadBtn.addEventListener('click', function() { fileInput.click(); });
+        changeBtn.addEventListener('click', function() { fileInput.click(); });
+
+        fileInput.addEventListener('change', function(e) {
+            var file = e.target.files[0];
             if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                overlay.src = ev.target.result;
-                overlay.style.display = 'block';
-                overlay.style.opacity = slider.value / 100;
-                sliderWrap.classList.add('show');
-                sizeWrap.classList.add('show');
-                changeBtn.classList.add('show');
-                uploadBtn.textContent = '사진 선택';
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                var img = new Image();
+                img.onload = function() {
+                    imgNatW = img.naturalWidth;
+                    imgNatH = img.naturalHeight;
+                    sizeSlider.value = 100;
+                    sizeVal.textContent = '100%';
+                    calcBaseRect(100);
+                    resetCorners();
+                    overlay.src = ev.target.result;
+                    overlay.style.display = 'block';
+                    overlay.style.opacity = opacitySlider.value / 100;
+                    applyTransform();
+                    showControls();
+                };
+                img.src = ev.target.result;
             };
             reader.readAsDataURL(file);
             fileInput.value = '';
         });
 
-        slider.addEventListener('input', () => {
-            const val = slider.value;
-            overlay.style.opacity = val / 100;
-            opacityVal.textContent = val + '%';
+        function showControls() {
+            opacityWrap.classList.add('show');
+            sizeWrap.classList.add('show');
+            changeBtn.classList.add('show');
+            cornerEls.forEach(function(el) { el.style.display = 'block'; });
+            cornerLine.style.display = 'block';
+            imageLoaded = true;
+        }
+
+        function calcBaseRect(pct) {
+            var vw = window.innerWidth;
+            var vh = window.innerHeight;
+            var scale = pct / 100;
+            var ratio = imgNatW / imgNatH;
+            var w, h;
+            if (ratio > vw / vh) {
+                w = vw * scale;
+                h = w / ratio;
+            } else {
+                h = vh * scale;
+                w = h * ratio;
+            }
+            baseRect.w = w;
+            baseRect.h = h;
+            baseRect.x = (vw - w) / 2;
+            baseRect.y = (vh - h) / 2;
+        }
+
+        function resetCorners() {
+            corners[0] = [baseRect.x, baseRect.y];
+            corners[1] = [baseRect.x + baseRect.w, baseRect.y];
+            corners[2] = [baseRect.x + baseRect.w, baseRect.y + baseRect.h];
+            corners[3] = [baseRect.x, baseRect.y + baseRect.h];
+            updateCornerEls();
+        }
+
+        function updateCornerEls() {
+            for (var i = 0; i < 4; i++) {
+                cornerEls[i].style.left = (corners[i][0] - 22) + 'px';
+                cornerEls[i].style.top = (corners[i][1] - 22) + 'px';
+            }
+            cornerPoly.setAttribute('points',
+                corners.map(function(c) { return c[0] + ',' + c[1]; }).join(' ')
+            );
+        }
+
+        // ── Sliders ──
+
+        opacitySlider.addEventListener('input', function() {
+            overlay.style.opacity = opacitySlider.value / 100;
+            opacityVal.textContent = opacitySlider.value + '%';
         });
 
-        sizeSlider.addEventListener('input', () => {
-            const val = sizeSlider.value;
-            overlay.style.transform = 'scale(' + (val / 100) + ')';
+        sizeSlider.addEventListener('input', function() {
+            var val = parseInt(sizeSlider.value);
             sizeVal.textContent = val + '%';
+            calcBaseRect(val);
+            resetCorners();
+            applyTransform();
         });
+
+        // ── Perspective Transform ──
+
+        function solveLinearSystem(A) {
+            var n = A.length;
+            for (var col = 0; col < n; col++) {
+                var maxRow = col;
+                for (var row = col + 1; row < n; row++) {
+                    if (Math.abs(A[row][col]) > Math.abs(A[maxRow][col])) maxRow = row;
+                }
+                var tmp = A[col]; A[col] = A[maxRow]; A[maxRow] = tmp;
+                if (Math.abs(A[col][col]) < 1e-10) return null;
+                for (var row = col + 1; row < n; row++) {
+                    var f = A[row][col] / A[col][col];
+                    for (var j = col; j <= n; j++) {
+                        A[row][j] -= f * A[col][j];
+                    }
+                }
+            }
+            var x = new Array(n);
+            for (var i = n - 1; i >= 0; i--) {
+                x[i] = A[i][n];
+                for (var j = i + 1; j < n; j++) {
+                    x[i] -= A[i][j] * x[j];
+                }
+                x[i] /= A[i][i];
+            }
+            return x;
+        }
+
+        function computeMatrix3d(sw, sh, dst) {
+            var src = [[0, 0], [sw, 0], [sw, sh], [0, sh]];
+            var A = [];
+            for (var i = 0; i < 4; i++) {
+                var sx = src[i][0], sy = src[i][1];
+                var dx = dst[i][0], dy = dst[i][1];
+                A.push([sx, sy, 1, 0, 0, 0, -dx * sx, -dx * sy, dx]);
+                A.push([0, 0, 0, sx, sy, 1, -dy * sx, -dy * sy, dy]);
+            }
+            var h = solveLinearSystem(A);
+            if (!h) return 'none';
+            var a = h[0], b = h[1], c = h[2];
+            var d = h[3], e = h[4], f = h[5];
+            var g = h[6], hh = h[7];
+            return 'matrix3d(' +
+                a + ',' + d + ',0,' + g + ',' +
+                b + ',' + e + ',0,' + hh + ',' +
+                '0,0,1,0,' +
+                c + ',' + f + ',0,1)';
+        }
+
+        function applyTransform() {
+            overlay.style.width = baseRect.w + 'px';
+            overlay.style.height = baseRect.h + 'px';
+            overlay.style.left = baseRect.x + 'px';
+            overlay.style.top = baseRect.y + 'px';
+
+            var dst = corners.map(function(c) {
+                return [c[0] - baseRect.x, c[1] - baseRect.y];
+            });
+            overlay.style.transform = computeMatrix3d(baseRect.w, baseRect.h, dst);
+            updateCornerEls();
+        }
+
+        // ── Corner Dragging ──
+
+        var dragIndex = -1;
+
+        function onPointerDown(idx, e) {
+            e.preventDefault();
+            dragIndex = idx;
+            cornerEls[idx].classList.add('dragging');
+        }
+
+        function onPointerMove(e) {
+            if (dragIndex < 0) return;
+            e.preventDefault();
+            var x, y;
+            if (e.touches) {
+                x = e.touches[0].clientX;
+                y = e.touches[0].clientY;
+            } else {
+                x = e.clientX;
+                y = e.clientY;
+            }
+            corners[dragIndex] = [x, y];
+            applyTransform();
+        }
+
+        function onPointerUp() {
+            if (dragIndex >= 0) {
+                cornerEls[dragIndex].classList.remove('dragging');
+                dragIndex = -1;
+            }
+        }
+
+        cornerEls.forEach(function(el, i) {
+            el.addEventListener('touchstart', function(e) { onPointerDown(i, e); }, { passive: false });
+            el.addEventListener('mousedown', function(e) { onPointerDown(i, e); });
+        });
+
+        document.addEventListener('touchmove', function(e) { onPointerMove(e); }, { passive: false });
+        document.addEventListener('mousemove', function(e) { onPointerMove(e); });
+        document.addEventListener('touchend', onPointerUp);
+        document.addEventListener('mouseup', onPointerUp);
+
+        // ── Init ──
 
         retryBtn.addEventListener('click', startCamera);
-
         startCamera();
         requestWakeLock();
         lockOrientation();
