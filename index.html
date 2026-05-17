@@ -173,6 +173,11 @@
             <input type="range" id="opacitySlider" min="0" max="100" value="50">
             <span id="opacityVal">50%</span>
         </div>
+        <div class="slider-wrap" id="sizeWrap">
+            <label>크기</label>
+            <input type="range" id="sizeSlider" min="10" max="200" value="100">
+            <span id="sizeVal">100%</span>
+        </div>
         <div class="btn-row">
             <button class="btn btn-secondary" id="changeBtn">사진 변경</button>
             <button class="btn btn-primary" id="uploadBtn">사진 선택</button>
@@ -194,6 +199,9 @@
         const slider = document.getElementById('opacitySlider');
         const sliderWrap = document.getElementById('sliderWrap');
         const opacityVal = document.getElementById('opacityVal');
+        const sizeSlider = document.getElementById('sizeSlider');
+        const sizeWrap = document.getElementById('sizeWrap');
+        const sizeVal = document.getElementById('sizeVal');
         const uploadBtn = document.getElementById('uploadBtn');
         const changeBtn = document.getElementById('changeBtn');
         const fileInput = document.getElementById('file-input');
@@ -254,6 +262,7 @@
                 overlay.style.display = 'block';
                 overlay.style.opacity = slider.value / 100;
                 sliderWrap.classList.add('show');
+                sizeWrap.classList.add('show');
                 changeBtn.classList.add('show');
                 uploadBtn.textContent = '사진 선택';
             };
@@ -265,6 +274,12 @@
             const val = slider.value;
             overlay.style.opacity = val / 100;
             opacityVal.textContent = val + '%';
+        });
+
+        sizeSlider.addEventListener('input', () => {
+            const val = sizeSlider.value;
+            overlay.style.transform = 'scale(' + (val / 100) + ')';
+            sizeVal.textContent = val + '%';
         });
 
         retryBtn.addEventListener('click', startCamera);
