@@ -16,6 +16,7 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             -webkit-user-select: none;
             user-select: none;
+            touch-action: none;
         }
 
         #camera {
@@ -36,7 +37,7 @@
 
         .corner {
             position: fixed;
-            width: 44px; height: 44px;
+            width: 48px; height: 48px;
             z-index: 20;
             display: none;
             touch-action: none;
@@ -61,9 +62,16 @@
 
         .corner-line {
             position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
             z-index: 15;
             pointer-events: none;
             display: none;
+        }
+
+        .corner-line.moving polygon {
+            stroke: rgba(100, 200, 255, 0.7);
+            stroke-width: 2.5;
         }
 
         .ui { position: fixed; z-index: 30; }
@@ -76,6 +84,7 @@
             flex-direction: column;
             align-items: center;
             gap: 8px;
+            touch-action: auto;
         }
 
         .slider-wrap {
@@ -88,6 +97,7 @@
             -webkit-backdrop-filter: blur(10px);
             padding: 8px 14px;
             border-radius: 14px;
+            touch-action: auto;
         }
 
         .slider-wrap.show { display: flex; }
@@ -108,12 +118,13 @@
             background: rgba(255, 255, 255, 0.25);
             border-radius: 3px;
             outline: none;
+            touch-action: auto;
         }
 
         .slider-wrap input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
-            width: 24px; height: 24px;
+            width: 28px; height: 28px;
             border-radius: 50%;
             background: #ff4081;
             border: 2.5px solid #fff;
@@ -128,7 +139,11 @@
             text-align: right;
         }
 
-        .btn-row { display: flex; gap: 10px; }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            touch-action: auto;
+        }
 
         .btn {
             border: none;
@@ -141,6 +156,7 @@
             align-items: center;
             gap: 6px;
             transition: transform 0.15s;
+            touch-action: auto;
         }
 
         .btn:active { transform: scale(0.95); }
@@ -162,6 +178,24 @@
         .btn-secondary.show { display: flex; }
 
         #file-input { display: none; }
+
+        .move-hint {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            z-index: 25;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+        .move-hint.show { opacity: 1; }
 
         .error-screen {
             position: fixed;
@@ -198,7 +232,9 @@
     <div class="corner" id="c2"></div>
     <div class="corner" id="c3"></div>
 
-    <div class="bottom-bar ui">
+    <div class="move-hint" id="moveHint">이동 모드</div>
+
+    <div class="bottom-bar ui" id="bottomBar">
         <div class="slider-wrap" id="opacityWrap">
             <label>투명도</label>
             <input type="range" id="opacitySlider" min="0" max="100" value="50">
@@ -248,6 +284,8 @@
         var retryBtn = document.getElementById('retryBtn');
         var cornerLine = document.getElementById('cornerLine');
         var cornerPoly = document.getElementById('cornerPoly');
+        var moveHint = document.getElementById('moveHint');
+        var bottomBar = document.getElementById('bottomBar');
         var cornerEls = [
             document.getElementById('c0'),
             document.getElementById('c1'),
@@ -405,8 +443,8 @@
 
         function updateCornerEls() {
             for (var i = 0; i < 4; i++) {
-                cornerEls[i].style.left = (corners[i][0] - 22) + 'px';
-                cornerEls[i].style.top = (corners[i][1] - 22) + 'px';
+                cornerEls[i].style.left = (corners[i][0] - 24) + 'px';
+                cornerEls[i].style.top = (corners[i][1] - 24) + 'px';
             }
             cornerPoly.setAttribute('points',
                 corners.map(function(c) { return c[0] + ',' + c[1]; }).join(' ')
@@ -468,14 +506,11 @@
             }
             var h = solveLinearSystem(A);
             if (!h) return 'none';
-            var a = h[0], b = h[1], c = h[2];
-            var d = h[3], e = h[4], f = h[5];
-            var g = h[6], hh = h[7];
             return 'matrix3d(' +
-                a + ',' + d + ',0,' + g + ',' +
-                b + ',' + e + ',0,' + hh + ',' +
+                h[0] + ',' + h[3] + ',0,' + h[6] + ',' +
+                h[1] + ',' + h[4] + ',0,' + h[7] + ',' +
                 '0,0,1,0,' +
-                c + ',' + f + ',0,1)';
+                h[2] + ',' + h[5] + ',0,1)';
         }
 
         function applyTransform() {
@@ -491,47 +526,180 @@
             updateCornerEls();
         }
 
-        // ── Corner Dragging ──
+        // ── Interaction: Corner Drag + Long-press Move ──
 
         var dragIndex = -1;
+        var moveMode = false;
+        var longPressTimer = null;
+        var touchStartPos = null;
+        var lastTouchPos = null;
+        var LONG_PRESS_MS = 400;
+        var MOVE_THRESHOLD = 10;
 
-        function onPointerDown(idx, e) {
+        function getTouchPos(e) {
+            if (e.touches && e.touches.length > 0) {
+                return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+            return { x: e.clientX, y: e.clientY };
+        }
+
+        function isOnUI(e) {
+            var el = e.target;
+            while (el) {
+                if (el === bottomBar || el.tagName === 'INPUT' || el.tagName === 'BUTTON') return true;
+                el = el.parentElement;
+            }
+            return false;
+        }
+
+        function isOnCorner(e) {
+            for (var i = 0; i < 4; i++) {
+                if (e.target === cornerEls[i]) return true;
+            }
+            return false;
+        }
+
+        // Corner drag — listeners only added during drag
+        function startCornerDrag(idx, e) {
             e.preventDefault();
             dragIndex = idx;
             cornerEls[idx].classList.add('dragging');
+            document.addEventListener('touchmove', onCornerDragMove, { passive: false });
+            document.addEventListener('mousemove', onCornerDragMove);
+            document.addEventListener('touchend', endCornerDrag);
+            document.addEventListener('mouseup', endCornerDrag);
         }
 
-        function onPointerMove(e) {
+        function onCornerDragMove(e) {
             if (dragIndex < 0) return;
             e.preventDefault();
-            var x, y;
-            if (e.touches) {
-                x = e.touches[0].clientX;
-                y = e.touches[0].clientY;
-            } else {
-                x = e.clientX;
-                y = e.clientY;
-            }
-            corners[dragIndex] = [x, y];
+            var pos = getTouchPos(e);
+            corners[dragIndex] = [pos.x, pos.y];
             applyTransform();
         }
 
-        function onPointerUp() {
+        function endCornerDrag() {
             if (dragIndex >= 0) {
                 cornerEls[dragIndex].classList.remove('dragging');
                 dragIndex = -1;
             }
+            document.removeEventListener('touchmove', onCornerDragMove);
+            document.removeEventListener('mousemove', onCornerDragMove);
+            document.removeEventListener('touchend', endCornerDrag);
+            document.removeEventListener('mouseup', endCornerDrag);
         }
 
         cornerEls.forEach(function(el, i) {
-            el.addEventListener('touchstart', function(e) { onPointerDown(i, e); }, { passive: false });
-            el.addEventListener('mousedown', function(e) { onPointerDown(i, e); });
+            el.addEventListener('touchstart', function(e) { startCornerDrag(i, e); }, { passive: false });
+            el.addEventListener('mousedown', function(e) { startCornerDrag(i, e); });
         });
 
-        document.addEventListener('touchmove', function(e) { onPointerMove(e); }, { passive: false });
-        document.addEventListener('mousemove', function(e) { onPointerMove(e); });
-        document.addEventListener('touchend', onPointerUp);
-        document.addEventListener('mouseup', onPointerUp);
+        // Long-press move — touch on the canvas area
+        function onScreenTouchStart(e) {
+            if (!imageLoaded) return;
+            if (isOnUI(e) || isOnCorner(e)) return;
+
+            var pos = getTouchPos(e);
+            touchStartPos = pos;
+            lastTouchPos = pos;
+
+            longPressTimer = setTimeout(function() {
+                moveMode = true;
+                moveHint.classList.add('show');
+                cornerLine.classList.add('moving');
+                if (navigator.vibrate) navigator.vibrate(30);
+            }, LONG_PRESS_MS);
+        }
+
+        function onScreenTouchMove(e) {
+            var pos = getTouchPos(e);
+
+            // Cancel long-press if moved before timer
+            if (longPressTimer && touchStartPos) {
+                var dx = pos.x - touchStartPos.x;
+                var dy = pos.y - touchStartPos.y;
+                if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+            }
+
+            // Move image
+            if (moveMode) {
+                e.preventDefault();
+                var deltaX = pos.x - lastTouchPos.x;
+                var deltaY = pos.y - lastTouchPos.y;
+                for (var i = 0; i < 4; i++) {
+                    corners[i][0] += deltaX;
+                    corners[i][1] += deltaY;
+                }
+                baseRect.x += deltaX;
+                baseRect.y += deltaY;
+                applyTransform();
+                lastTouchPos = pos;
+            }
+        }
+
+        function onScreenTouchEnd() {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+            if (moveMode) {
+                moveMode = false;
+                moveHint.classList.remove('show');
+                cornerLine.classList.remove('moving');
+            }
+            touchStartPos = null;
+            lastTouchPos = null;
+        }
+
+        document.addEventListener('touchstart', onScreenTouchStart, { passive: true });
+        document.addEventListener('touchmove', onScreenTouchMove, { passive: false });
+        document.addEventListener('touchend', onScreenTouchEnd);
+
+        // Mouse fallback for long-press (desktop testing)
+        var mouseDown = false;
+        document.addEventListener('mousedown', function(e) {
+            if (!imageLoaded || isOnUI(e) || isOnCorner(e)) return;
+            mouseDown = true;
+            var pos = getTouchPos(e);
+            touchStartPos = pos;
+            lastTouchPos = pos;
+            longPressTimer = setTimeout(function() {
+                moveMode = true;
+                moveHint.classList.add('show');
+                cornerLine.classList.add('moving');
+            }, LONG_PRESS_MS);
+        });
+        document.addEventListener('mousemove', function(e) {
+            if (!mouseDown) return;
+            var pos = getTouchPos(e);
+            if (longPressTimer && touchStartPos) {
+                var dx = pos.x - touchStartPos.x;
+                var dy = pos.y - touchStartPos.y;
+                if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+            }
+            if (moveMode) {
+                var deltaX = pos.x - lastTouchPos.x;
+                var deltaY = pos.y - lastTouchPos.y;
+                for (var i = 0; i < 4; i++) {
+                    corners[i][0] += deltaX;
+                    corners[i][1] += deltaY;
+                }
+                baseRect.x += deltaX;
+                baseRect.y += deltaY;
+                applyTransform();
+                lastTouchPos = pos;
+            }
+        });
+        document.addEventListener('mouseup', function() {
+            mouseDown = false;
+            onScreenTouchEnd();
+        });
 
         // ── Init ──
 
